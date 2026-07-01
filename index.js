@@ -1,7 +1,8 @@
 const express = require('express');
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => console.log('Server Express jalan untuk Render!'));
+
 const { 
     default: makeWASocket, 
     useMultiFileAuthState, 
@@ -35,7 +36,7 @@ let currentKeyIndex = 0;
 const modelNameGemini = "gemini-2.5-flash"; 
 const MY_NUMBER = "62895364564953@s.whatsapp.net"; 
 
-// --- STRUKTUR DIREKTORI ---
+// --- STRUKTUR DIREKTORI (Aman untuk Render) ---
 const DATA_DIR = path.join(__dirname, './Data');
 const HISTORY_DIR = path.join(DATA_DIR, 'history');
 const DAILY_DIR = path.join(HISTORY_DIR, 'daily');
@@ -47,7 +48,6 @@ const SESSION_DIR = path.join(DATA_DIR, 'Session-Baileys');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// Setup input terminal untuk pairing code
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
@@ -119,6 +119,21 @@ let timerDaily = null;
 let pairingTimeout = null;
 
 async function startSkyMe() {
+    // ====================================================================================
+    // FITUR HARD RESET (NUKLIR) - UNTUK MENGATASI ERROR "COULDN'T LINK DEVICE" & "428"
+    // UBAH JADI 'false' JIKA SUDAH BERHASIL LOGIN AGAR TIDAK LOGOUT SAAT SERVER RESTART!
+    const FORCE_RESET = true; 
+    // ====================================================================================
+
+    if (FORCE_RESET && fs.existsSync(SESSION_DIR)) {
+        console.log("🔥 [SYSTEM] Menjalankan HARD RESET. Menghapus sesi lama secara paksa...");
+        const files = fs.readdirSync(SESSION_DIR);
+        for (const file of files) {
+            fs.unlinkSync(path.join(SESSION_DIR, file));
+        }
+        console.log("✅ [SYSTEM] Sesi lama bersih. Bot siap menerima kode pairing baru.");
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -130,7 +145,6 @@ async function startSkyMe() {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })), 
         },
         printQRInTerminal: false,
-        // Browser default untuk pairing code agar lebih stabil
         browser: ["Chrome (Linux)", "Chrome", "110.0.0.0"]
     });
 
@@ -148,7 +162,7 @@ async function startSkyMe() {
             console.log(`Menggunakan nomor dari Environment Variable (PAIRING_NUMBER): ${phoneNumber}`);
         }
 
-        // REVISI KRITIS: Menambahkan jeda waktu (delay) sebelum eksekusi requestPairingCode
+        // JEDA 5 DETIK AGAR TERHINDAR DARI ERROR 428 PRECONDITION REQUIRED
         console.log("⏳ Menghubungkan ke WhatsApp, mohon tunggu 5 detik...");
         
         setTimeout(async () => {
@@ -157,14 +171,22 @@ async function startSkyMe() {
                 const code = await sock.requestPairingCode(phoneNumber.trim());
                 console.log(`\n👉 KODE PAIRING ANDA: ${code.match(/.{1,4}/g).join('-')}\n`);
                 console.log(`Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja\n`);
+                
+                // Jika FORCE_RESET masih true, ingatkan user.
+                if(FORCE_RESET) {
+                    console.log("=================================================================");
+                    console.log("🚨 PERINGATAN: JIKA BERHASIL LOGIN, SEGERA EDIT FILE index.js");
+                    console.log("🚨 UBAH 'const FORCE_RESET = true;' MENJADI 'const FORCE_RESET = false;'");
+                    console.log("=================================================================");
+                }
             } catch (err) {
                 console.error("❌ [PAIRING ERROR]: Gagal mendapatkan kode pairing.", err.message);
             }
-        }, 5000); // Jeda 5 detik agar koneksi ws stabil terlebih dahulu
+        }, 5000); 
 
         pairingTimeout = setTimeout(() => {
-            console.log("❌ [TIMEOUT] Waktu registrasi 1 menit habis. Bot dimatikan.");
-            process.exit(0);
+            console.log("❌ [TIMEOUT] Waktu tunggu terlalu lama. Merestart...");
+            process.exit(1);
         }, 60000);
     }
 
@@ -221,10 +243,12 @@ async function startSkyMe() {
 				if (promptDraw) {
 					const systemPrompt = "JAWAB DENGAN FORMAT [PROMPTDETAIL] | [PILIHAN MODEL] TANPA BASA BASI";
 					let historyContext = fs.existsSync(historyPath) ? fs.readFileSync(historyPath, 'utf8').slice(-3000) : "";
-				let parts = [systemPrompt, `History Context:\n${historyContext}`];
+                    
+                    // Fixed Template Literal here
+				    let parts = [systemPrompt, `History Context:\n${historyContext}`];
 				
-				await handleDrawFunction(m, sock, promptDraw, userId, generateAIResponseGemini, parts);
-				return;
+				    await handleDrawFunction(m, sock, promptDraw, userId, generateAIResponseGemini, parts);
+				    return;
 				}
 				return;
 			}
