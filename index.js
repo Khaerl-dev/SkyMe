@@ -35,7 +35,7 @@ let currentKeyIndex = 0;
 const modelNameGemini = "gemini-2.5-flash"; 
 const MY_NUMBER = "62895364564953@s.whatsapp.net"; 
 
-// --- STRUKTUR DIREKTORI (Revisi: Diubah dari ../Data menjadi ./Data agar aman di Render) ---
+// --- STRUKTUR DIREKTORI ---
 const DATA_DIR = path.join(__dirname, './Data');
 const HISTORY_DIR = path.join(DATA_DIR, 'history');
 const DAILY_DIR = path.join(HISTORY_DIR, 'daily');
@@ -130,7 +130,8 @@ async function startSkyMe() {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })), 
         },
         printQRInTerminal: false,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        // Browser default untuk pairing code agar lebih stabil
+        browser: ["Chrome (Linux)", "Chrome", "110.0.0.0"]
     });
 
     if (!sock.authState.creds.registered) {
@@ -138,8 +139,6 @@ async function startSkyMe() {
         console.log("       SKYME MASTER PAIRING SYSTEM        ");
         console.log("==========================================\n");
         
-        // REVISI: Render tidak mendukung input interaktif dari terminal. 
-        // Menggunakan Environment Variable untuk nomor HP, fallback ke terminal jika lokal.
         let phoneNumber = process.env.PAIRING_NUMBER;
         
         if (!phoneNumber) {
@@ -149,10 +148,19 @@ async function startSkyMe() {
             console.log(`Menggunakan nomor dari Environment Variable (PAIRING_NUMBER): ${phoneNumber}`);
         }
 
-        const code = await sock.requestPairingCode(phoneNumber.trim());
+        // REVISI KRITIS: Menambahkan jeda waktu (delay) sebelum eksekusi requestPairingCode
+        console.log("⏳ Menghubungkan ke WhatsApp, mohon tunggu 5 detik...");
         
-        console.log(`\n👉 KODE PAIRING ANDA: ${code.match(/.{1,4}/g).join('-')}\n`);
-        console.log(`Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja\n`);
+        setTimeout(async () => {
+            try {
+                console.log(`📥 Meminta kode pairing untuk nomor: ${phoneNumber}`);
+                const code = await sock.requestPairingCode(phoneNumber.trim());
+                console.log(`\n👉 KODE PAIRING ANDA: ${code.match(/.{1,4}/g).join('-')}\n`);
+                console.log(`Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja\n`);
+            } catch (err) {
+                console.error("❌ [PAIRING ERROR]: Gagal mendapatkan kode pairing.", err.message);
+            }
+        }, 5000); // Jeda 5 detik agar koneksi ws stabil terlebih dahulu
 
         pairingTimeout = setTimeout(() => {
             console.log("❌ [TIMEOUT] Waktu registrasi 1 menit habis. Bot dimatikan.");
